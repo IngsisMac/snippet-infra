@@ -1,0 +1,173 @@
+version: "3.8"
+
+services:
+  snippets-db:
+    image: postgres:16-alpine
+    container_name: snippets-db
+    environment:
+      POSTGRES_DB: snippets_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - snippets_pgdata:/var/lib/postgresql/data
+    networks:
+      - snippet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d snippets_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  permissions-db:
+    image: postgres:16-alpine
+    container_name: permissions-db
+    environment:
+      POSTGRES_DB: permissions_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - permissions_pgdata:/var/lib/postgresql/data
+    networks:
+      - snippet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d permissions_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: snippet-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - snippet-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  snippet-service:
+    build:
+      context: ../snippet-service
+    container_name: snippet-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://snippets-db:5432/snippets_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI:-https://dev-ingsis.auth0.com/}
+      RUNNER_SERVICE_URL: http://snippet-runner-service:8082
+      PERMISSION_SERVICE_URL: http://snippet-permission-service:8081
+      ASSET_SERVICE_URL: http://snippet-asset-service:8083
+      SNIPPET_STORE_TYPE: asset-service
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    depends_on:
+      snippets-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      snippet-asset-service:
+        condition: service_started
+    networks:
+      - snippet-network
+
+  snippet-permission-service:
+    build:
+      context: ../snippet-permission-service
+    container_name: snippet-permission-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://permissions-db:5432/permissions_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI:-https://dev-ingsis.auth0.com/}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    depends_on:
+      permissions-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - snippet-network
+
+  snippet-runner-service:
+    build:
+      context: ../snippet-runner-service
+    container_name: snippet-runner-service
+    environment:
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI:-https://dev-ingsis.auth0.com/}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Aislado en red interna de Docker, sin puertos expuestos al host (Decisión D7)
+    networks:
+      - snippet-network
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: snippet-azurite
+    ports:
+      - "10000:10000"
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+    volumes:
+      - azurite_data:/data
+    networks:
+      - snippet-network
+
+  snippet-asset-service:
+    build:
+      context: ../snippet-asset-service
+    container_name: snippet-asset-service
+    environment:
+      AZURE_HOST: "http://azurite"
+      SERVER_PORT: 8083
+      NEW_RELIC_APP_NAME: "asset-service"
+      NEW_RELIC_AGENT_ENABLED: "false"
+    depends_on:
+      - azurite
+    networks:
+      - snippet-network
+
+  snippet-ui:
+    build:
+      context: ../snippet-ui
+    container_name: snippet-ui
+    networks:
+      - snippet-network
+
+  gateway:
+    image: nginx:alpine
+    container_name: snippet-gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - snippet-service
+      - snippet-permission-service
+      - snippet-asset-service
+      - snippet-ui
+    networks:
+      - snippet-network
+
+networks:
+  snippet-network:
+    driver: bridge
+
+volumes:
+  snippets_pgdata:
+  permissions_pgdata:
+  redis_data:
+  assets_data:
+  azurite_data:
+
