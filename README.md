@@ -16,7 +16,7 @@ graph TD
         
         SnippetSvc --> SnippetsDB[(PostgreSQL: snippets_db)]
         PermSvc --> PermDB[(PostgreSQL: permissions_db)]
-        AssetSvc --> AssetsVol[(Volume: assets_data)]
+        AssetSvc --> Azurite[(Azurite / Azure Blob)]
         
         SnippetSvc -.-> Redis[(Redis 7)]
         PermSvc -.-> Redis
@@ -33,10 +33,10 @@ graph TD
 2. **`permissions-db`**: PostgreSQL 16 para ownership, compartir y configuraciones de reglas de linteo/formateo (`permissions_db`).
 3. **`redis`**: Redis 7 para colas y streams de eventos de reprocesamiento asincrónico.
 4. **`snippet-service`**: Microservicio Spring Boot de metadata y test cases.
-5. **`snippet-permission-service`**: Microservicio Spring Boot de usuarios, ownership y reglas.
-6. **`snippet-runner-service`**: Microservicio aislado con el motor de PrintScript (sin puertos expuestos al host).
-7. **`snippet-asset-service`**: Microservicio de almacenamiento de archivos de código.
-8. **`gateway`**: NGINX Reverse Proxy. Rutea solo `/api/snippets`, `/api/permissions` y la UI; responde `403` a `/runner`, `/internal` y `/v1/asset`, que son rutas de servicio a servicio.
+5. **`snippet-permission-service`**: Microservicio Spring Boot de usuarios (directorio para compartir), ownership y reglas.
+6. **`snippet-runner-service`**: Microservicio aislado con el motor de PrintScript (sin puertos expuestos al host). Exige JWT en todas sus rutas: solo lo alcanza `snippet-service` con el token M2M, así que el stack necesita `AUTH0_M2M_ENABLED=true` para crear o ejecutar snippets.
+7. **`snippet-asset-service`**: servicio provisto por la cátedra (fork en `IngsisMac/snippet-asset-service`; la implementación propia anterior quedó en la rama `custom-local`). Guarda el contenido crudo de cada snippet en Azurite (`AZURE_HOST`).
+8. **`gateway`**: NGINX Reverse Proxy. Rutea solo `/api/snippets`, `/api/permissions`, `/api/users` y la UI; responde `403` a `/runner`, `/internal` y `/v1/asset`, que son rutas de servicio a servicio.
 
 ## Requisitos Previos
 
@@ -55,13 +55,18 @@ Para compilar todos los microservicios con un solo paso:
 ./build-all.sh
 ```
 
-### 2. Configurar Variables de Entorno (Opcional)
+### 2. Configurar Variables de Entorno (obligatorio)
 
-Si necesitas sobreescribir la configuración de autenticación Auth0:
+Los backends validan los JWT de Auth0 contra el tenant y la audience configurados, así que
+hace falta un `.env` antes de levantar el stack:
 
 ```bash
 cp .env.example .env
 ```
+
+Completar `AUTH0_ISSUER_URI` y `AUTH0_AUDIENCE`. Para que `snippet-service` llame a
+`permission-service` y `runner-service` con token propio, poner `AUTH0_M2M_ENABLED=true` y las
+credenciales de la Application machine-to-machine de Auth0.
 
 ### 3. Levantar el Stack Completo
 
@@ -73,6 +78,7 @@ El Gateway NGINX quedará accesible en:
 - **Frontend Web**: [http://localhost:8080](http://localhost:8080)
 - **API Snippets**: [http://localhost:8080/api/snippets](http://localhost:8080/api/snippets)
 - **API Permissions**: [http://localhost:8080/api/permissions](http://localhost:8080/api/permissions)
+- **API Users** (directorio para compartir): [http://localhost:8080/api/users](http://localhost:8080/api/users)
 - **Gateway Health**: [http://localhost:8080/health](http://localhost:8080/health)
 
 ### 4. Detener el Stack

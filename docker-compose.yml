@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   snippets-db:
     image: postgres:16-alpine
@@ -62,7 +60,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://snippets-db:5432/snippets_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI:-https://dev-ingsis.auth0.com/}
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      AUTH0_M2M_ENABLED: ${AUTH0_M2M_ENABLED:-false}
+      AUTH0_M2M_TOKEN_URI: ${AUTH0_ISSUER_URI}oauth/token
+      AUTH0_M2M_CLIENT_ID: ${AUTH0_M2M_CLIENT_ID:-}
+      AUTH0_M2M_CLIENT_SECRET: ${AUTH0_M2M_CLIENT_SECRET:-}
       RUNNER_SERVICE_URL: http://snippet-runner-service:8082
       PERMISSION_SERVICE_URL: http://snippet-permission-service:8081
       ASSET_SERVICE_URL: http://snippet-asset-service:8083
@@ -87,7 +90,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://permissions-db:5432/permissions_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI:-https://dev-ingsis.auth0.com/}
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
     depends_on:
@@ -103,7 +107,8 @@ services:
       context: ../snippet-runner-service
     container_name: snippet-runner-service
     environment:
-      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI:-https://dev-ingsis.auth0.com/}
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
     depends_on:
@@ -124,6 +129,8 @@ services:
     networks:
       - snippet-network
 
+  # Asset service de la cátedra (fork en IngsisMac/snippet-asset-service). Guarda el contenido
+  # crudo de los snippets en Azurite. Sin puertos al host: solo lo usa snippet-service.
   snippet-asset-service:
     build:
       context: ../snippet-asset-service
@@ -168,6 +175,5 @@ volumes:
   snippets_pgdata:
   permissions_pgdata:
   redis_data:
-  assets_data:
   azurite_data:
 
