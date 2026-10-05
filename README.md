@@ -74,6 +74,11 @@ credenciales de la Application machine-to-machine de Auth0.
 docker compose up --build
 ```
 
+> `--build` reconstruye las imágenes, pero **no recompila Kotlin**: cada Dockerfile copia el
+> `build/libs/app.jar` que ya existe. Después de tocar código de un servicio hay que volver a
+> correr `./build-all.sh` (o `./gradlew bootJar` en ese servicio) antes de `docker compose up
+> --build`, o la imagen sale con el jar viejo.
+
 El Gateway NGINX quedará accesible en:
 - **Frontend Web**: [http://localhost:8080](http://localhost:8080)
 - **API Snippets**: [http://localhost:8080/api/snippets](http://localhost:8080/api/snippets)
