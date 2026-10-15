@@ -1,0 +1,205 @@
+version: "3.8"
+
+services:
+  snippets-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: snippets_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - snippets_pgdata:/var/lib/postgresql/data
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 256M
+
+  permissions-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: permissions_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5433:5432"
+    volumes:
+      - permissions_pgdata:/var/lib/postgresql/data
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 128M
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 256M
+
+  snippet-service:
+    image: ghcr.io/ingsismac/snippet-service:${TAG:-latest}
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://snippets-db:5432/snippets_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      AUTH0_M2M_ENABLED: ${AUTH0_M2M_ENABLED:-false}
+      AUTH0_M2M_TOKEN_URI: ${AUTH0_ISSUER_URI}oauth/token
+      AUTH0_M2M_CLIENT_ID: ${AUTH0_M2M_CLIENT_ID:-}
+      AUTH0_M2M_CLIENT_SECRET: ${AUTH0_M2M_CLIENT_SECRET:-}
+      RUNNER_SERVICE_URL: http://snippet-runner-service:8082
+      PERMISSION_SERVICE_URL: http://snippet-permission-service:8081
+      ASSET_SERVICE_URL: http://snippet-asset-service:8083
+      SNIPPET_STORE_TYPE: asset-service
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 512M
+
+  snippet-permission-service:
+    image: ghcr.io/ingsismac/snippet-permission-service:${TAG:-latest}
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://permissions-db:5432/permissions_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 512M
+
+  snippet-runner-service:
+    image: ghcr.io/ingsismac/snippet-runner-service:${TAG:-latest}
+    environment:
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 512M
+
+  snippet-asset-service:
+    image: ghcr.io/ingsismac/snippet-asset-service:${TAG:-latest}
+    environment:
+      AZURE_HOST: "http://azurite"
+      SERVER_PORT: 8083
+      NEW_RELIC_APP_NAME: "asset-service"
+      NEW_RELIC_AGENT_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 512M
+
+  snippet-ui:
+    image: ghcr.io/ingsismac/snippet-ui:${TAG:-latest}
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 64M
+
+  gateway:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    configs:
+      - source: nginx_conf
+        target: /etc/nginx/nginx.conf
+    networks:
+      - snippet-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 64M
+
+configs:
+  nginx_conf:
+    file: ./nginx/nginx.conf
+
+networks:
+  snippet-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  snippets_pgdata:
+  permissions_pgdata:
+  redis_data:
+  azurite_data:

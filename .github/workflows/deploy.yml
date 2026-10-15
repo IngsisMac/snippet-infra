@@ -1,0 +1,80 @@
+name: Deploy Stack to Swarm
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine environment target
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ inputs.environment }}"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+          if [ "$TARGET" = "prod" ]; then
+            echo "host=${{ secrets.VM_PROD_HOST }}" >> $GITHUB_OUTPUT
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "host=${{ secrets.VM_DEV_HOST }}" >> $GITHUB_OUTPUT
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure SSH key
+        env:
+          SSH_KEY: ${{ (steps.env.outputs.target == 'prod' && secrets.SSH_PRIVATE_KEY_PROD) || secrets.SSH_PRIVATE_KEY_DEV || secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ steps.env.outputs.host }} >> ~/.ssh/known_hosts
+
+      - name: Copy stack manifest & configs to VM
+        run: |
+          ssh azureuser@${{ steps.env.outputs.host }} "mkdir -p /home/azureuser/deploy/nginx"
+          scp docker-stack.yml azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/
+          scp nginx/nginx.conf azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/nginx/
+
+      - name: Deploy to Docker Swarm via SSH
+        env:
+          AUTH0_ISSUER_URI: ${{ secrets.AUTH0_ISSUER_URI }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+          AUTH0_M2M_ENABLED: ${{ secrets.AUTH0_M2M_ENABLED }}
+          AUTH0_M2M_CLIENT_ID: ${{ secrets.AUTH0_M2M_CLIENT_ID }}
+          AUTH0_M2M_CLIENT_SECRET: ${{ secrets.AUTH0_M2M_CLIENT_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || 'postgres' }}
+          TAG: ${{ steps.env.outputs.tag }}
+        run: |
+          ssh azureuser@${{ steps.env.outputs.host }} "
+            cd /home/azureuser/deploy && \
+            export AUTH0_ISSUER_URI='${AUTH0_ISSUER_URI}' && \
+            export AUTH0_AUDIENCE='${AUTH0_AUDIENCE}' && \
+            export AUTH0_M2M_ENABLED='${AUTH0_M2M_ENABLED}' && \
+            export AUTH0_M2M_CLIENT_ID='${AUTH0_M2M_CLIENT_ID}' && \
+            export AUTH0_M2M_CLIENT_SECRET='${AUTH0_M2M_CLIENT_SECRET}' && \
+            export POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' && \
+            export TAG='${TAG}' && \
+            docker stack deploy -c docker-stack.yml snippet --with-registry-auth
+          "
