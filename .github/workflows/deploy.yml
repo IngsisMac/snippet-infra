@@ -15,6 +15,10 @@ on:
         options:
           - dev
           - prod
+      tag:
+        description: 'Image tag to deploy (use latest until dev branches are created)'
+        required: false
+        default: 'latest'
 
 jobs:
   deploy:
@@ -28,18 +32,20 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TARGET="${{ inputs.environment }}"
+            TAG="${{ inputs.tag || 'latest' }}"
           elif [ "${{ github.ref_name }}" = "main" ]; then
             TARGET="prod"
+            TAG="latest"
           else
             TARGET="dev"
+            TAG="dev"
           fi
           echo "target=$TARGET" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           if [ "$TARGET" = "prod" ]; then
             echo "host=${{ secrets.VM_PROD_HOST }}" >> $GITHUB_OUTPUT
-            echo "tag=latest" >> $GITHUB_OUTPUT
           else
             echo "host=${{ secrets.VM_DEV_HOST }}" >> $GITHUB_OUTPUT
-            echo "tag=dev" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure SSH key
