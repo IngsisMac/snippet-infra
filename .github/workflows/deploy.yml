@@ -57,6 +57,22 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ steps.env.outputs.host }} >> ~/.ssh/known_hosts
 
+      - name: Validate Auth0 configuration
+        env:
+          AUTH0_ISSUER_URI: ${{ secrets.AUTH0_ISSUER_URI }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+        run: |
+          fail=0
+          case "$AUTH0_ISSUER_URI" in
+            https://*/) ;;
+            *) echo "::error::AUTH0_ISSUER_URI must start with https:// and end with a trailing slash"; fail=1 ;;
+          esac
+          case "$AUTH0_AUDIENCE" in
+            https://*) ;;
+            *) echo "::error::AUTH0_AUDIENCE must start with https://"; fail=1 ;;
+          esac
+          exit $fail
+
       - name: Copy stack manifest & configs to VM
         run: |
           ssh azureuser@${{ steps.env.outputs.host }} "mkdir -p /home/azureuser/deploy/nginx"
