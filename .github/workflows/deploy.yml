@@ -61,7 +61,7 @@ jobs:
         run: |
           ssh azureuser@${{ steps.env.outputs.host }} "mkdir -p /home/azureuser/deploy/nginx"
           scp docker-stack.yml azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/
-          scp nginx/nginx.conf azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/nginx/
+          scp nginx/nginx.conf nginx/nginx.ssl.conf azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/nginx/
 
       - name: Deploy to Docker Swarm via SSH
         env:

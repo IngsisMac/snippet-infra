@@ -176,8 +176,11 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     configs:
-      - source: nginx_conf
+      - source: nginx_ssl_conf
         target: /etc/nginx/nginx.conf
     networks:
       - snippet-network
@@ -190,8 +193,8 @@ services:
           memory: 64M
 
 configs:
-  nginx_conf:
-    file: ./nginx/nginx.conf
+  nginx_ssl_conf:
+    file: ./nginx/nginx.ssl.conf
 
 networks:
   snippet-network:
