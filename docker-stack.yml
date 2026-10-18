@@ -183,7 +183,7 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     configs:
-      - source: nginx_ssl_conf
+      - source: nginx_ssl_conf_v2
         target: /etc/nginx/nginx.conf
     networks:
       - snippet-network
@@ -196,7 +196,7 @@ services:
           memory: 64M
 
 configs:
-  nginx_ssl_conf:
+  nginx_ssl_conf_v2:
     file: ./nginx/nginx.ssl.conf
 
 networks:
