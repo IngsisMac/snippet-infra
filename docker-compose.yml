@@ -107,6 +107,9 @@ services:
       context: ../snippet-runner-service
     container_name: snippet-runner-service
     environment:
+      RUNNER_COMPUTE_TIMEOUT: ${RUNNER_COMPUTE_TIMEOUT:-10s}
+      RUNNER_INPUT_TIMEOUT: ${RUNNER_INPUT_TIMEOUT:-60s}
+      RUNNER_WATCHDOG_INTERVAL: ${RUNNER_WATCHDOG_INTERVAL:-PT0.5S}
       AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis

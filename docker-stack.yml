@@ -127,6 +127,9 @@ services:
   snippet-runner-service:
     image: ghcr.io/ingsismac/snippet-runner-service:${TAG:-latest}
     environment:
+      RUNNER_COMPUTE_TIMEOUT: ${RUNNER_COMPUTE_TIMEOUT:-10s}
+      RUNNER_INPUT_TIMEOUT: ${RUNNER_INPUT_TIMEOUT:-60s}
+      RUNNER_WATCHDOG_INTERVAL: ${RUNNER_WATCHDOG_INTERVAL:-PT0.5S}
       AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
