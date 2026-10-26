@@ -92,6 +92,11 @@ services:
       SNIPPET_STORE_TYPE: asset-service
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: "snippet-service"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
     networks:
       - snippet-network
@@ -113,6 +118,11 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: "snippet-permission-service"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
     networks:
       - snippet-network
@@ -134,6 +144,11 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: "snippet-runner-service"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
     networks:
       - snippet-network
@@ -150,8 +165,11 @@ services:
     environment:
       AZURE_HOST: "http://azurite"
       SERVER_PORT: 8083
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
       NEW_RELIC_APP_NAME: "asset-service"
-      NEW_RELIC_AGENT_ENABLED: "false"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
     networks:
       - snippet-network
@@ -183,7 +201,7 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     configs:
-      - source: nginx_ssl_conf_v2
+      - source: nginx_ssl_conf
         target: /etc/nginx/nginx.conf
     networks:
       - snippet-network
@@ -196,7 +214,8 @@ services:
           memory: 64M
 
 configs:
-  nginx_ssl_conf_v2:
+  nginx_ssl_conf:
+    name: nginx_ssl_conf_${NGINX_CONF_VERSION:-v2}
     file: ./nginx/nginx.ssl.conf
 
 networks:

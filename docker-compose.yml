@@ -72,6 +72,11 @@ services:
       SNIPPET_STORE_TYPE: asset-service
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: "snippet-service"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       snippets-db:
         condition: service_healthy
@@ -94,6 +99,11 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: "snippet-permission-service"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       permissions-db:
         condition: service_healthy
@@ -114,6 +124,11 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
+      NEW_RELIC_APP_NAME: "snippet-runner-service"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       redis:
         condition: service_healthy
@@ -141,8 +156,11 @@ services:
     environment:
       AZURE_HOST: "http://azurite"
       SERVER_PORT: 8083
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
       NEW_RELIC_APP_NAME: "asset-service"
-      NEW_RELIC_AGENT_ENABLED: "false"
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       - azurite
     networks:
@@ -151,6 +169,10 @@ services:
   snippet-ui:
     build:
       context: ../snippet-ui
+      args:
+        VITE_AUTH0_DOMAIN: ${VITE_AUTH0_DOMAIN:-dev-o02i7bmya113pn5u.us.auth0.com}
+        VITE_AUTH0_CLIENT_ID: ${VITE_AUTH0_CLIENT_ID:-ucXYWKDkLUEd32VY21MxKMBoyqbpH9bT}
+        VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-https://snippet-searcher.ingsis/}
     container_name: snippet-ui
     networks:
       - snippet-network

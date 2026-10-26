@@ -24,9 +24,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Determine environment target
         id: env
         run: |
@@ -44,9 +41,16 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           if [ "$TARGET" = "prod" ]; then
             echo "host=${{ secrets.VM_PROD_HOST }}" >> $GITHUB_OUTPUT
+            echo "ref=main" >> $GITHUB_OUTPUT
           else
             echo "host=${{ secrets.VM_DEV_HOST }}" >> $GITHUB_OUTPUT
+            echo "ref=dev" >> $GITHUB_OUTPUT
           fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.env.outputs.ref }}
 
       - name: Configure SSH key
         env:
@@ -87,8 +91,12 @@ jobs:
           AUTH0_M2M_CLIENT_ID: ${{ secrets.AUTH0_M2M_CLIENT_ID }}
           AUTH0_M2M_CLIENT_SECRET: ${{ secrets.AUTH0_M2M_CLIENT_SECRET }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || 'postgres' }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          NEW_RELIC_AGENT_ENABLED: ${{ secrets.NEW_RELIC_AGENT_ENABLED || 'true' }}
           TAG: ${{ steps.env.outputs.tag }}
         run: |
+          NGINX_CONF_HASH=$(sha256sum nginx/nginx.ssl.conf | cut -c1-8)
+          NGINX_CONF_VERSION="${TAG}_${NGINX_CONF_HASH}"
           ssh azureuser@${{ steps.env.outputs.host }} "
             cd /home/azureuser/deploy && \
             export AUTH0_ISSUER_URI='${AUTH0_ISSUER_URI}' && \
@@ -97,6 +105,9 @@ jobs:
             export AUTH0_M2M_CLIENT_ID='${AUTH0_M2M_CLIENT_ID}' && \
             export AUTH0_M2M_CLIENT_SECRET='${AUTH0_M2M_CLIENT_SECRET}' && \
             export POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' && \
+            export NEW_RELIC_LICENSE_KEY='${NEW_RELIC_LICENSE_KEY}' && \
+            export NEW_RELIC_AGENT_ENABLED='${NEW_RELIC_AGENT_ENABLED}' && \
             export TAG='${TAG}' && \
+            export NGINX_CONF_VERSION='${NGINX_CONF_VERSION}' && \
             docker stack deploy -c docker-stack.yml snippet --with-registry-auth
           "
