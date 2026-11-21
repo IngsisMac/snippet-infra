@@ -62,6 +62,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: postgres
       AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
       AUTH0_M2M_ENABLED: ${AUTH0_M2M_ENABLED:-false}
       AUTH0_M2M_TOKEN_URI: ${AUTH0_ISSUER_URI}oauth/token
       AUTH0_M2M_CLIENT_ID: ${AUTH0_M2M_CLIENT_ID:-}
@@ -76,6 +77,8 @@ services:
       NEW_RELIC_APP_NAME: "snippet-service"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       snippets-db:
@@ -97,12 +100,15 @@ services:
       SPRING_DATASOURCE_PASSWORD: postgres
       AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
       NEW_RELIC_APP_NAME: "snippet-permission-service"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       permissions-db:
@@ -122,12 +128,15 @@ services:
       RUNNER_WATCHDOG_INTERVAL: ${RUNNER_WATCHDOG_INTERVAL:-PT0.5S}
       AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
       NEW_RELIC_APP_NAME: "snippet-runner-service"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       redis:
@@ -141,7 +150,7 @@ services:
     container_name: snippet-azurite
     ports:
       - "10000:10000"
-    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000"
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data"
     volumes:
       - azurite_data:/data
     networks:
@@ -160,6 +169,8 @@ services:
       NEW_RELIC_APP_NAME: "asset-service"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
     depends_on:
       - azurite

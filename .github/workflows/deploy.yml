@@ -23,6 +23,14 @@ on:
     types:
       - deploy-stack
 
+# Los tres servicios pushean casi a la vez y cada uno avisa por su cuenta, asi que sin esto
+# arrancarian tres deploys en paralelo contra la misma VM, todos reconciliando el stack
+# entero. Una corrida por ambiente: si llega otra mientras hay una en vuelo, cancela la
+# vieja y gana la mas nueva. Dev y Prod siguen pudiendo desplegar a la vez entre si.
+concurrency:
+  group: deploy-${{ github.event.client_payload.environment || inputs.environment || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
