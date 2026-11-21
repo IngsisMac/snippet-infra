@@ -19,6 +19,9 @@ on:
         description: 'Image tag to deploy (use latest until dev branches are created)'
         required: false
         default: 'latest'
+  repository_dispatch:
+    types:
+      - deploy-stack
 
 jobs:
   deploy:
@@ -30,6 +33,12 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TARGET="${{ inputs.environment }}"
             TAG="${{ inputs.tag || 'latest' }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            TARGET="${{ github.event.client_payload.environment || 'dev' }}"
+            TAG="${{ github.event.client_payload.tag }}"
+            if [ -z "$TAG" ]; then
+              if [ "$TARGET" = "prod" ]; then TAG="latest"; else TAG="dev"; fi
+            fi
           elif [ "${{ github.ref_name }}" = "main" ]; then
             TARGET="prod"
             TAG="latest"
@@ -39,11 +48,14 @@ jobs:
           fi
           echo "target=$TARGET" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "azure=${{ secrets.AZURE_CREDENTIALS != '' }}" >> $GITHUB_OUTPUT
           if [ "$TARGET" = "prod" ]; then
             echo "host=${{ secrets.VM_PROD_HOST }}" >> $GITHUB_OUTPUT
+            echo "vm_name=${{ secrets.AZURE_VM_PROD_NAME || 'vm-prod-ingsis' }}" >> $GITHUB_OUTPUT
             echo "ref=main" >> $GITHUB_OUTPUT
           else
             echo "host=${{ secrets.VM_DEV_HOST }}" >> $GITHUB_OUTPUT
+            echo "vm_name=${{ secrets.AZURE_VM_DEV_NAME || 'vm-dev-ingsis' }}" >> $GITHUB_OUTPUT
             echo "ref=dev" >> $GITHUB_OUTPUT
           fi
 
@@ -52,14 +64,73 @@ jobs:
         with:
           ref: ${{ steps.env.outputs.ref }}
 
+      - name: Azure Login
+        if: steps.env.outputs.azure == 'true'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Start Azure VM
+        if: steps.env.outputs.azure == 'true'
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP || 'rg-ingsis' }}
+          VM_NAME: ${{ steps.env.outputs.vm_name }}
+        run: |
+          power_state() {
+            az vm get-instance-view \
+              --resource-group "$AZURE_RESOURCE_GROUP" --name "$VM_NAME" \
+              --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus" \
+              -o tsv
+          }
+          echo "Power state before start: $(power_state)"
+          echo "Powering on Azure VM '$VM_NAME' in resource group '$AZURE_RESOURCE_GROUP'..."
+          az vm start --resource-group "$AZURE_RESOURCE_GROUP" --name "$VM_NAME"
+          echo "Power state after start: $(power_state)"
+
+      - name: Warn when VM auto-start is skipped
+        if: steps.env.outputs.azure != 'true'
+        env:
+          VM_NAME: ${{ steps.env.outputs.vm_name }}
+        run: |
+          echo "::warning title=VM auto-start skipped::No AZURE_CREDENTIALS secret is set, so '$VM_NAME' was not powered on. The deploy assumes the VM is already running; if it is stopped or deallocated, the next step will time out waiting for SSH."
+
+      - name: Wait for SSH port 22
+        env:
+          VM_HOST: ${{ steps.env.outputs.host }}
+          VM_NAME: ${{ steps.env.outputs.vm_name }}
+          AZURE_START_ATTEMPTED: ${{ steps.env.outputs.azure }}
+        run: |
+          echo "Waiting for SSH port 22 on $VM_HOST..."
+          for i in {1..36}; do
+            if (echo > /dev/tcp/"$VM_HOST"/22) >/dev/null 2>&1; then
+              echo "SSH is reachable! (Attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/36: SSH not ready yet. Waiting 5s..."
+            sleep 5
+          done
+          if [ "$AZURE_START_ATTEMPTED" = "true" ]; then
+            echo "::error title=SSH unreachable::No answer on $VM_HOST:22 after 180s. The VM '$VM_NAME' was powered on by this run, so the likely cause is the network security group blocking inbound TCP 22, a public IP that changed (check the VM has a static public IP and that DuckDNS points at it), or the VM still booting past the 180s budget."
+          else
+            echo "::error title=SSH unreachable::No answer on $VM_HOST:22 after 180s. Two likely causes: the VM '$VM_NAME' is stopped or deallocated and this run had no AZURE_CREDENTIALS secret to power it on, or the network security group is blocking inbound TCP 22."
+          fi
+          exit 1
+
       - name: Configure SSH key
         env:
           SSH_KEY: ${{ (steps.env.outputs.target == 'prod' && secrets.SSH_PRIVATE_KEY_PROD) || secrets.SSH_PRIVATE_KEY_DEV || secrets.SSH_PRIVATE_KEY }}
+          VM_HOST: ${{ steps.env.outputs.host }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ steps.env.outputs.host }} >> ~/.ssh/known_hosts
+          for i in {1..5}; do
+            ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts && break || sleep 3
+          done
+          if ! grep -q . ~/.ssh/known_hosts; then
+            echo "::error title=ssh-keyscan failed::Could not read the host key of $VM_HOST after 5 attempts."
+            exit 1
+          fi
 
       - name: Validate Auth0 configuration
         env:
