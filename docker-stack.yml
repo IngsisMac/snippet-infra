@@ -104,12 +104,12 @@ services:
     networks:
       - snippet-network
     deploy:
-      replicas: 1
+      replicas: 2
       restart_policy:
         condition: any
       resources:
         limits:
-          memory: 768M
+          memory: 448M
 
   snippet-permission-service:
     image: ghcr.io/ingsismac/snippet-permission-service:${TAG:-latest}
@@ -133,12 +133,12 @@ services:
     networks:
       - snippet-network
     deploy:
-      replicas: 1
+      replicas: 2
       restart_policy:
         condition: any
       resources:
         limits:
-          memory: 768M
+          memory: 448M
 
   snippet-runner-service:
     image: ghcr.io/ingsismac/snippet-runner-service:${TAG:-latest}
@@ -162,12 +162,15 @@ services:
     networks:
       - snippet-network
     deploy:
+      # Dejo el runner en una sola replica: ExecutionSessionRegistry guarda las
+      # sesiones de ejecucion en memoria de cada JVM, y con dos replicas el GET del
+      # stream SSE y el POST del input podrian caer en instancias distintas.
       replicas: 1
       restart_policy:
         condition: any
       resources:
         limits:
-          memory: 768M
+          memory: 448M
 
   snippet-asset-service:
     image: ghcr.io/ingsismac/snippet-asset-service:${TAG:-latest}
@@ -185,12 +188,12 @@ services:
     networks:
       - snippet-network
     deploy:
-      replicas: 1
+      replicas: 2
       restart_policy:
         condition: any
       resources:
         limits:
-          memory: 768M
+          memory: 448M
 
   snippet-ui:
     image: ghcr.io/ingsismac/snippet-ui:${TAG:-latest}
