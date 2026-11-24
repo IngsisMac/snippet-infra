@@ -101,6 +101,14 @@ services:
       NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    # Swarm solo rutea a la replica cuando la JVM ya escucha; sin esto mandaba trafico
+    # al contenedor recien creado y el gateway devolvia 502 hasta que arrancaba.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
     networks:
       - snippet-network
     deploy:
@@ -130,6 +138,14 @@ services:
       NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    # Swarm solo rutea a la replica cuando la JVM ya escucha; sin esto mandaba trafico
+    # al contenedor recien creado y el gateway devolvia 502 hasta que arrancaba.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
     networks:
       - snippet-network
     deploy:
@@ -159,6 +175,14 @@ services:
       NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    # Swarm solo rutea a la replica cuando la JVM ya escucha; sin esto mandaba trafico
+    # al contenedor recien creado y el gateway devolvia 502 hasta que arrancaba.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8082 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
     networks:
       - snippet-network
     deploy:
@@ -185,6 +209,14 @@ services:
       NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
       NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    # Swarm solo rutea a la replica cuando la JVM ya escucha; sin esto mandaba trafico
+    # al contenedor recien creado y el gateway devolvia 502 hasta que arrancaba.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9090/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
     networks:
       - snippet-network
     deploy:
