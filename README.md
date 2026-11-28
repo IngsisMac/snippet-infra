@@ -6,24 +6,36 @@ Repositorio de infraestructura, configuración de Docker Compose y Reverse Proxy
 
 ```mermaid
 graph TD
-    Client[Cliente / Frontend] -->|Puerto 8080| Gateway[NGINX Gateway]
-    
-    subgraph Red Docker [snippet-network]
+    Client[Cliente / Navegador] -->|Puerto 80/443| Gateway[NGINX Gateway]
+
+    subgraph EdgeNet ["edge-net (L7 Gateway + Servicios Expuestos)"]
+        Gateway -->|"/"| UI[snippet-ui:80]
         Gateway -->|/api/snippets| SnippetSvc[snippet-service:8080]
-        Gateway -->|/api/permissions| PermSvc[snippet-permission-service:8081]
-        SnippetSvc -->|/v1/asset| AssetSvc[snippet-asset-service:8083]
+        Gateway -->|/api/permissions /api/users| PermSvc[snippet-permission-service:8081]
+    end
+
+    subgraph InternalNet ["internal-net (Servicio a Servicio + Egress Auth0/NR)"]
         SnippetSvc -->|/internal| PermSvc
-        
-        SnippetSvc --> SnippetsDB[(PostgreSQL: snippets_db)]
-        PermSvc --> PermDB[(PostgreSQL: permissions_db)]
-        AssetSvc --> Azurite[(Azurite / Azure Blob)]
-        
+        SnippetSvc -->|/runner| RunnerSvc[snippet-runner-service:8082]
+        SnippetSvc -->|/v1/asset| AssetSvc[snippet-asset-service:8083]
+    end
+
+    subgraph RedisNet ["redis-net (internal: true)"]
         SnippetSvc -.-> Redis[(Redis 7)]
         PermSvc -.-> Redis
-        
-        ParserSvc[snippet-runner-service:8082 - Interno]
-        ParserSvc -.-> Redis
-        SnippetSvc --> ParserSvc
+        RunnerSvc -.-> Redis
+    end
+
+    subgraph SnippetsDBNet ["snippets-db-net (internal: true)"]
+        SnippetSvc --> SnippetsDB[(PostgreSQL: snippets_db)]
+    end
+
+    subgraph PermDBNet ["permissions-db-net (internal: true)"]
+        PermSvc --> PermDB[(PostgreSQL: permissions_db)]
+    end
+
+    subgraph AssetNet ["asset-storage-net (internal: true)"]
+        AssetSvc --> Azurite[(Azurite / Azure Blob)]
     end
 ```
 
@@ -100,7 +112,8 @@ docker compose down -v
 
 ## Cumplimiento de Decisiones de Cátedra (ADRs)
 
-- **D7 (Aislamiento del runner)**: `snippet-runner-service` se ejecuta estrictamente dentro de la red interna de Docker `snippet-network` sin exponer puertos al host ni a través del NGINX gateway. NGINX rechaza con `403 Forbidden` cualquier solicitud a `/runner`.
+- **D7 (Aislamiento del runner y segmentación de subnets)**: `snippet-runner-service` y `snippet-asset-service` viven únicamente en `internal-net` (y sus redes de datos), sin puertos expuestos al host ni presencia en `edge-net` (el `gateway` ni siquiera tiene ruta L3/L4 hacia ellos, además de rechazar con `403 Forbidden` `/runner`, `/internal` y `/v1/asset`). Todas las bases de datos y colas (`snippets-db`, `permissions-db`, `azurite`, `redis`) están aisladas en subnets dedicadas con `internal: true`.
+- **CORS**: se fuerza en el `SecurityFilterChain` de cada microservicio Spring Boot (`SecurityConfig.kt` + `CORS_ALLOWED_ORIGINS`, nunca `*`, `allowCredentials = false` porque el JWT viaja en `Authorization: Bearer`), y NGINX actúa como proxy transparente preservando `Origin` y headers `Access-Control-*`. En producción el navegador opera same-origin detrás de `gateway`.
 - **D8 (API interna de permisos)**: los endpoints que aceptan un `userId` explícito (`/internal/permissions`, `/internal/rules`) y el storage de assets (`/v1/asset`) solo se alcanzan desde la red interna; NGINX los bloquea con `403`.
 - **Producción Frontend React**: `snippet-ui` utiliza un build de producción multi-stage empaquetado y servido a través de `nginx:1.27-alpine` (el uso de `devServer` o `npm run dev` está prohibido por la cátedra).
 - **Streams Asincrónicos**: Los microservicios se conectan a Redis en el puerto `6379` sobre la red interna para procesamiento desacoplado de validación y linting.

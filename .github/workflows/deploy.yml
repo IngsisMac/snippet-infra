@@ -1,4 +1,4 @@
-name: Deploy Stack to Swarm
+name: Deploy Swarm Stacks
 
 on:
   push:
@@ -15,18 +15,25 @@ on:
         options:
           - dev
           - prod
+      stack:
+        description: 'Stack to deploy'
+        required: true
+        default: 'apps'
+        type: choice
+        options:
+          - apps
+          - gateway
+          - data
+          - all
       tag:
-        description: 'Image tag to deploy (use latest until dev branches are created)'
+        description: 'Image tag to deploy (sha-... or latest/dev)'
         required: false
-        default: 'latest'
+        default: ''
   repository_dispatch:
     types:
       - deploy-stack
+      - deploy-service
 
-# Los tres servicios pushean casi a la vez y cada uno avisa por su cuenta, asi que sin esto
-# arrancarian tres deploys en paralelo contra la misma VM, todos reconciliando el stack
-# entero. Una corrida por ambiente: si llega otra mientras hay una en vuelo, cancela la
-# vieja y gana la mas nueva. Dev y Prod siguen pudiendo desplegar a la vez entre si.
 concurrency:
   group: deploy-${{ github.event.client_payload.environment || inputs.environment || github.ref_name }}
   cancel-in-progress: true
@@ -35,42 +42,68 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine environment target
+      - name: Determine target environment
         id: env
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TARGET="${{ inputs.environment }}"
-            TAG="${{ inputs.tag || 'latest' }}"
+            TAG="${{ inputs.tag }}"
+            STACK="${{ inputs.stack }}"
           elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             TARGET="${{ github.event.client_payload.environment || 'dev' }}"
             TAG="${{ github.event.client_payload.tag }}"
-            if [ -z "$TAG" ]; then
-              if [ "$TARGET" = "prod" ]; then TAG="latest"; else TAG="dev"; fi
-            fi
+            SERVICE="${{ github.event.client_payload.service }}"
+            STACK="${{ github.event.client_payload.stack || 'apps' }}"
           elif [ "${{ github.ref_name }}" = "main" ]; then
             TARGET="prod"
             TAG="latest"
+            STACK="auto"
           else
             TARGET="dev"
             TAG="dev"
+            STACK="auto"
           fi
-          echo "target=$TARGET" >> $GITHUB_OUTPUT
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "azure=${{ secrets.AZURE_CREDENTIALS != '' }}" >> $GITHUB_OUTPUT
+
+          if [ -z "$TAG" ]; then
+            if [ "$TARGET" = "prod" ]; then TAG="latest"; else TAG="dev"; fi
+          fi
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "stack=$STACK" >> "$GITHUB_OUTPUT"
+          echo "azure=${{ secrets.AZURE_CREDENTIALS != '' }}" >> "$GITHUB_OUTPUT"
+
           if [ "$TARGET" = "prod" ]; then
-            echo "host=${{ secrets.VM_PROD_HOST }}" >> $GITHUB_OUTPUT
-            echo "vm_name=${{ secrets.AZURE_VM_PROD_NAME || 'vm-prod-ingsis' }}" >> $GITHUB_OUTPUT
-            echo "ref=main" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.VM_PROD_HOST }}" >> "$GITHUB_OUTPUT"
+            echo "vm_name=${{ secrets.AZURE_VM_PROD_NAME || 'vm-prod-ingsis' }}" >> "$GITHUB_OUTPUT"
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+            echo "nr_suffix=prod" >> "$GITHUB_OUTPUT"
           else
-            echo "host=${{ secrets.VM_DEV_HOST }}" >> $GITHUB_OUTPUT
-            echo "vm_name=${{ secrets.AZURE_VM_DEV_NAME || 'vm-dev-ingsis' }}" >> $GITHUB_OUTPUT
-            echo "ref=dev" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.VM_DEV_HOST }}" >> "$GITHUB_OUTPUT"
+            echo "vm_name=${{ secrets.AZURE_VM_DEV_NAME || 'vm-dev-ingsis' }}" >> "$GITHUB_OUTPUT"
+            echo "ref=dev" >> "$GITHUB_OUTPUT"
+            echo "nr_suffix=dev" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.env.outputs.ref }}
+
+      - name: Detect changed stacks
+        if: steps.env.outputs.stack == 'auto'
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            data:
+              - 'stacks/data.yml'
+            gateway:
+              - 'stacks/gateway.yml'
+              - 'nginx/**'
+            apps:
+              - 'stacks/apps.yml'
 
       - name: Azure Login
         if: steps.env.outputs.azure == 'true'
@@ -83,110 +116,69 @@ jobs:
         env:
           AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP || 'rg-ingsis' }}
           VM_NAME: ${{ steps.env.outputs.vm_name }}
-        run: |
-          power_state() {
-            az vm get-instance-view \
-              --resource-group "$AZURE_RESOURCE_GROUP" --name "$VM_NAME" \
-              --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus" \
-              -o tsv
-          }
-          echo "Power state before start: $(power_state)"
-          echo "Powering on Azure VM '$VM_NAME' in resource group '$AZURE_RESOURCE_GROUP'..."
-          az vm start --resource-group "$AZURE_RESOURCE_GROUP" --name "$VM_NAME"
-          echo "Power state after start: $(power_state)"
+        run: az vm start --resource-group "$AZURE_RESOURCE_GROUP" --name "$VM_NAME"
 
-      - name: Warn when VM auto-start is skipped
-        if: steps.env.outputs.azure != 'true'
-        env:
-          VM_NAME: ${{ steps.env.outputs.vm_name }}
-        run: |
-          echo "::warning title=VM auto-start skipped::No AZURE_CREDENTIALS secret is set, so '$VM_NAME' was not powered on. The deploy assumes the VM is already running; if it is stopped or deallocated, the next step will time out waiting for SSH."
+      - name: Setup SSH Agent for Docker Context
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ (steps.env.outputs.target == 'prod' && secrets.SSH_PRIVATE_KEY_PROD) || secrets.SSH_PRIVATE_KEY_DEV || secrets.SSH_PRIVATE_KEY }}
 
-      - name: Wait for SSH port 22
+      - name: Trust VM host key
         env:
-          VM_HOST: ${{ steps.env.outputs.host }}
-          VM_NAME: ${{ steps.env.outputs.vm_name }}
-          AZURE_START_ATTEMPTED: ${{ steps.env.outputs.azure }}
-        run: |
-          echo "Waiting for SSH port 22 on $VM_HOST..."
-          for i in {1..36}; do
-            if (echo > /dev/tcp/"$VM_HOST"/22) >/dev/null 2>&1; then
-              echo "SSH is reachable! (Attempt $i)"
-              exit 0
-            fi
-            echo "Attempt $i/36: SSH not ready yet. Waiting 5s..."
-            sleep 5
-          done
-          if [ "$AZURE_START_ATTEMPTED" = "true" ]; then
-            echo "::error title=SSH unreachable::No answer on $VM_HOST:22 after 180s. The VM '$VM_NAME' was powered on by this run, so the likely cause is the network security group blocking inbound TCP 22, a public IP that changed (check the VM has a static public IP and that DuckDNS points at it), or the VM still booting past the 180s budget."
-          else
-            echo "::error title=SSH unreachable::No answer on $VM_HOST:22 after 180s. Two likely causes: the VM '$VM_NAME' is stopped or deallocated and this run had no AZURE_CREDENTIALS secret to power it on, or the network security group is blocking inbound TCP 22."
-          fi
-          exit 1
-
-      - name: Configure SSH key
-        env:
-          SSH_KEY: ${{ (steps.env.outputs.target == 'prod' && secrets.SSH_PRIVATE_KEY_PROD) || secrets.SSH_PRIVATE_KEY_DEV || secrets.SSH_PRIVATE_KEY }}
           VM_HOST: ${{ steps.env.outputs.host }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          for i in {1..5}; do
-            ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts && break || sleep 3
+          for i in {1..12}; do
+            ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null && grep -q . ~/.ssh/known_hosts && exit 0
+            sleep 5
           done
-          if ! grep -q . ~/.ssh/known_hosts; then
-            echo "::error title=ssh-keyscan failed::Could not read the host key of $VM_HOST after 5 attempts."
-            exit 1
-          fi
+          echo "::error::Could not reach SSH on $VM_HOST"
+          exit 1
 
-      - name: Validate Auth0 configuration
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update single service (granular deploy)
+        if: steps.env.outputs.service != ''
         env:
-          AUTH0_ISSUER_URI: ${{ secrets.AUTH0_ISSUER_URI }}
-          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+          DOCKER_HOST: ssh://azureuser@${{ steps.env.outputs.host }}
+          SERVICE: ${{ steps.env.outputs.service }}
+          TAG: ${{ steps.env.outputs.tag }}
         run: |
-          fail=0
-          case "$AUTH0_ISSUER_URI" in
-            https://*/) ;;
-            *) echo "::error::AUTH0_ISSUER_URI must start with https:// and end with a trailing slash"; fail=1 ;;
-          esac
-          case "$AUTH0_AUDIENCE" in
-            https://*) ;;
-            *) echo "::error::AUTH0_AUDIENCE must start with https://"; fail=1 ;;
-          esac
-          exit $fail
+          docker service update \
+            --image "ghcr.io/ingsismac/${SERVICE}:${TAG}" \
+            --with-registry-auth \
+            "snippet-apps_${SERVICE}"
 
-      - name: Copy stack manifest & configs to VM
-        run: |
-          ssh azureuser@${{ steps.env.outputs.host }} "mkdir -p /home/azureuser/deploy/nginx"
-          scp docker-stack.yml azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/
-          scp nginx/nginx.conf nginx/nginx.ssl.conf azureuser@${{ steps.env.outputs.host }}:/home/azureuser/deploy/nginx/
-
-      - name: Deploy to Docker Swarm via SSH
+      - name: Deploy data stack
+        if: steps.env.outputs.service == '' && (steps.env.outputs.stack == 'all' || steps.env.outputs.stack == 'data' || steps.changes.outputs.data == 'true')
         env:
-          AUTH0_ISSUER_URI: ${{ secrets.AUTH0_ISSUER_URI }}
-          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
-          AUTH0_M2M_ENABLED: ${{ secrets.AUTH0_M2M_ENABLED }}
-          AUTH0_M2M_CLIENT_ID: ${{ secrets.AUTH0_M2M_CLIENT_ID }}
-          AUTH0_M2M_CLIENT_SECRET: ${{ secrets.AUTH0_M2M_CLIENT_SECRET }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || 'postgres' }}
-          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
-          NEW_RELIC_AGENT_ENABLED: ${{ secrets.NEW_RELIC_AGENT_ENABLED || 'true' }}
+          DOCKER_HOST: ssh://azureuser@${{ steps.env.outputs.host }}
+          HOSTNAME: ${{ steps.env.outputs.vm_name }}
+        run: docker stack deploy -c stacks/data.yml snippet-data --with-registry-auth
+
+      - name: Deploy gateway stack
+        if: steps.env.outputs.service == '' && (steps.env.outputs.stack == 'all' || steps.env.outputs.stack == 'gateway' || steps.changes.outputs.gateway == 'true')
+        env:
+          DOCKER_HOST: ssh://azureuser@${{ steps.env.outputs.host }}
           TAG: ${{ steps.env.outputs.tag }}
         run: |
           NGINX_CONF_HASH=$(sha256sum nginx/nginx.ssl.conf | cut -c1-8)
-          NGINX_CONF_VERSION="${TAG}_${NGINX_CONF_HASH}"
-          ssh azureuser@${{ steps.env.outputs.host }} "
-            cd /home/azureuser/deploy && \
-            export AUTH0_ISSUER_URI='${AUTH0_ISSUER_URI}' && \
-            export AUTH0_AUDIENCE='${AUTH0_AUDIENCE}' && \
-            export AUTH0_M2M_ENABLED='${AUTH0_M2M_ENABLED}' && \
-            export AUTH0_M2M_CLIENT_ID='${AUTH0_M2M_CLIENT_ID}' && \
-            export AUTH0_M2M_CLIENT_SECRET='${AUTH0_M2M_CLIENT_SECRET}' && \
-            export POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' && \
-            export NEW_RELIC_LICENSE_KEY='${NEW_RELIC_LICENSE_KEY}' && \
-            export NEW_RELIC_AGENT_ENABLED='${NEW_RELIC_AGENT_ENABLED}' && \
-            export TAG='${TAG}' && \
-            export NGINX_CONF_VERSION='${NGINX_CONF_VERSION}' && \
-            docker stack deploy -c docker-stack.yml snippet --with-registry-auth
-          "
+          export NGINX_CONF_VERSION="${TAG}_${NGINX_CONF_HASH}"
+          docker stack deploy -c stacks/gateway.yml snippet-gateway --with-registry-auth
+
+      - name: Deploy apps stack
+        if: steps.env.outputs.service == '' && (steps.env.outputs.stack == 'all' || steps.env.outputs.stack == 'apps' || steps.changes.outputs.apps == 'true')
+        env:
+          DOCKER_HOST: ssh://azureuser@${{ steps.env.outputs.host }}
+          TAG: ${{ steps.env.outputs.tag }}
+          AUTH0_ISSUER_URI: ${{ secrets.AUTH0_ISSUER_URI }}
+          AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+          AUTH0_M2M_ENABLED: ${{ secrets.AUTH0_M2M_ENABLED }}
+          NEW_RELIC_AGENT_ENABLED: ${{ secrets.NEW_RELIC_AGENT_ENABLED || 'true' }}
+          NEW_RELIC_ENV_SUFFIX: ${{ steps.env.outputs.nr_suffix }}
+        run: docker stack deploy -c stacks/apps.yml snippet-apps --with-registry-auth

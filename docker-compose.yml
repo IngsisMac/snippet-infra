@@ -11,7 +11,7 @@ services:
     volumes:
       - snippets_pgdata:/var/lib/postgresql/data
     networks:
-      - snippet-network
+      - snippets-db-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d snippets_db"]
       interval: 5s
@@ -30,7 +30,7 @@ services:
     volumes:
       - permissions_pgdata:/var/lib/postgresql/data
     networks:
-      - snippet-network
+      - permissions-db-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d permissions_db"]
       interval: 5s
@@ -45,7 +45,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - snippet-network
+      - redis-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -74,7 +74,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
-      NEW_RELIC_APP_NAME: "snippet-service"
+      NEW_RELIC_APP_NAME: "snippet-service-dev"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
       NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
@@ -88,7 +88,10 @@ services:
       snippet-asset-service:
         condition: service_started
     networks:
-      - snippet-network
+      - edge-net
+      - internal-net
+      - redis-net
+      - snippets-db-net
 
   snippet-permission-service:
     build:
@@ -104,7 +107,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
-      NEW_RELIC_APP_NAME: "snippet-permission-service"
+      NEW_RELIC_APP_NAME: "snippet-permission-service-dev"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
       NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
@@ -116,7 +119,10 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - snippet-network
+      - edge-net
+      - internal-net
+      - redis-net
+      - permissions-db-net
 
   snippet-runner-service:
     build:
@@ -132,7 +138,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
-      NEW_RELIC_APP_NAME: "snippet-runner-service"
+      NEW_RELIC_APP_NAME: "snippet-runner-service-dev"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
       NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
@@ -143,7 +149,8 @@ services:
         condition: service_healthy
     # Aislado en red interna de Docker, sin puertos expuestos al host (Decisión D7)
     networks:
-      - snippet-network
+      - internal-net
+      - redis-net
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
@@ -154,7 +161,7 @@ services:
     volumes:
       - azurite_data:/data
     networks:
-      - snippet-network
+      - asset-storage-net
 
   # Asset service de la cátedra (fork en IngsisMac/snippet-asset-service). Guarda el contenido
   # crudo de los snippets en Azurite. Sin puertos al host: solo lo usa snippet-service.
@@ -166,7 +173,7 @@ services:
       AZURE_HOST: "http://azurite"
       SERVER_PORT: 8083
       NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY:-}
-      NEW_RELIC_APP_NAME: "asset-service"
+      NEW_RELIC_APP_NAME: "asset-service-dev"
       NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
       NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
       NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
@@ -175,7 +182,8 @@ services:
     depends_on:
       - azurite
     networks:
-      - snippet-network
+      - internal-net
+      - asset-storage-net
 
   snippet-ui:
     build:
@@ -186,7 +194,7 @@ services:
         VITE_AUTH0_AUDIENCE: ${VITE_AUTH0_AUDIENCE:-https://snippet-searcher.ingsis/}
     container_name: snippet-ui
     networks:
-      - snippet-network
+      - edge-net
 
   gateway:
     image: nginx:alpine
@@ -201,11 +209,25 @@ services:
       - snippet-asset-service
       - snippet-ui
     networks:
-      - snippet-network
+      - edge-net
 
 networks:
-  snippet-network:
+  edge-net:
     driver: bridge
+  internal-net:
+    driver: bridge
+  redis-net:
+    driver: bridge
+    internal: true
+  snippets-db-net:
+    driver: bridge
+    internal: true
+  permissions-db-net:
+    driver: bridge
+    internal: true
+  asset-storage-net:
+    driver: bridge
+    internal: true
 
 volumes:
   snippets_pgdata:

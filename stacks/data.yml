@@ -1,0 +1,136 @@
+version: "3.8"
+
+# Stack de infraestructura base (redes overlay, bases de datos, Redis, Azurite y agente de host).
+# Se despliega solo cuando cambia la topología de datos o monitoreo; los deploys de microservicios
+# no reinician ni tocan este stack.
+
+services:
+  snippets-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: snippets_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - snippets_pgdata:/var/lib/postgresql/data
+    networks:
+      - snippets-db-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 256M
+
+  permissions-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: permissions_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - permissions_pgdata:/var/lib/postgresql/data
+    networks:
+      - permissions-db-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    networks:
+      - redis-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 128M
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data"
+    volumes:
+      - azurite_data:/data
+    networks:
+      - asset-storage-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 256M
+
+  newrelic-infra:
+    image: newrelic/infrastructure:latest
+    environment:
+      NRIA_OVERRIDE_HOSTNAME: ${HOSTNAME:-dev-vm}
+      NRIA_PASSTHROUGH_ENVIRONMENT: "true"
+    secrets:
+      - source: newrelic_infra_yml
+        target: /etc/newrelic-infra.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/hostroot:ro
+    networks:
+      - internal-net
+    deploy:
+      mode: global
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 192M
+
+secrets:
+  postgres_password:
+    external: true
+  newrelic_infra_yml:
+    external: true
+
+networks:
+  edge-net:
+    name: edge-net
+    driver: overlay
+    attachable: true
+  internal-net:
+    name: internal-net
+    driver: overlay
+    attachable: true
+  redis-net:
+    name: redis-net
+    driver: overlay
+    internal: true
+  snippets-db-net:
+    name: snippets-db-net
+    driver: overlay
+    internal: true
+  permissions-db-net:
+    name: permissions-db-net
+    driver: overlay
+    internal: true
+  asset-storage-net:
+    name: asset-storage-net
+    driver: overlay
+    internal: true
+
+volumes:
+  snippets_pgdata:
+  permissions_pgdata:
+  redis_data:
+  azurite_data:

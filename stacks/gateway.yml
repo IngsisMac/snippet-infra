@@ -1,0 +1,34 @@
+version: "3.8"
+
+# Stack de borde (Reverse Proxy / API Gateway L7 + terminación TLS).
+# Lee nginx.ssl.conf como Swarm config directamente desde el runner de CI/CD sin scp en la VM.
+
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    configs:
+      - source: nginx_ssl_conf
+        target: /etc/nginx/nginx.conf
+    networks:
+      - edge-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 64M
+
+configs:
+  nginx_ssl_conf:
+    name: nginx_ssl_conf_${NGINX_CONF_VERSION:-v2}
+    file: ../nginx/nginx.ssl.conf
+
+networks:
+  edge-net:
+    external: true

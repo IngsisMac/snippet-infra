@@ -1,0 +1,204 @@
+version: "3.8"
+
+# Stack de aplicaciones (microservicios Spring Boot + frontend React).
+# Consume credenciales vía Docker Swarm secrets (sin variables sensibles en claro) y permite
+# actualizar un servicio puntual con `docker service update` sin redesplegar el resto.
+
+services:
+  snippet-service:
+    image: ghcr.io/ingsismac/snippet-service:${TAG:-latest}
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://snippets-db:5432/snippets_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://snippet-dev.duckdns.org,https://snippet-prod.duckdns.org}
+      AUTH0_M2M_ENABLED: ${AUTH0_M2M_ENABLED:-false}
+      AUTH0_M2M_TOKEN_URI: ${AUTH0_ISSUER_URI}oauth/token
+      RUNNER_SERVICE_URL: http://snippet-runner-service:8082
+      PERMISSION_SERVICE_URL: http://snippet-permission-service:8081
+      ASSET_SERVICE_URL: http://snippet-asset-service:8083
+      SNIPPET_STORE_TYPE: asset-service
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_ENV_SUFFIX:+snippet-service-${NEW_RELIC_ENV_SUFFIX}}
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Dnewrelic.config.file=/run/secrets/newrelic.yml"
+    secrets:
+      - source: postgres_password
+        target: spring.datasource.password
+      - source: auth0_m2m_client_id
+        target: auth.m2m.client-id
+      - source: auth0_m2m_client_secret
+        target: auth.m2m.client-secret
+      - source: newrelic_yml
+        target: newrelic.yml
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    networks:
+      - edge-net
+      - internal-net
+      - redis-net
+      - snippets-db-net
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 768M
+
+  snippet-permission-service:
+    image: ghcr.io/ingsismac/snippet-permission-service:${TAG:-latest}
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://permissions-db:5432/permissions_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://snippet-dev.duckdns.org,https://snippet-prod.duckdns.org}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_ENV_SUFFIX:+snippet-permission-service-${NEW_RELIC_ENV_SUFFIX}}
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Dnewrelic.config.file=/run/secrets/newrelic.yml"
+    secrets:
+      - source: postgres_password
+        target: spring.datasource.password
+      - source: newrelic_yml
+        target: newrelic.yml
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    networks:
+      - edge-net
+      - internal-net
+      - redis-net
+      - permissions-db-net
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 768M
+
+  snippet-runner-service:
+    image: ghcr.io/ingsismac/snippet-runner-service:${TAG:-latest}
+    environment:
+      RUNNER_COMPUTE_TIMEOUT: ${RUNNER_COMPUTE_TIMEOUT:-10s}
+      RUNNER_INPUT_TIMEOUT: ${RUNNER_INPUT_TIMEOUT:-60s}
+      RUNNER_WATCHDOG_INTERVAL: ${RUNNER_WATCHDOG_INTERVAL:-PT0.5S}
+      AUTH0_ISSUER_URI: ${AUTH0_ISSUER_URI}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://snippet-dev.duckdns.org,https://snippet-prod.duckdns.org}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_ENV_SUFFIX:+snippet-runner-service-${NEW_RELIC_ENV_SUFFIX}}
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Dnewrelic.config.file=/run/secrets/newrelic.yml"
+    secrets:
+      - source: newrelic_yml
+        target: newrelic.yml
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8082 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    networks:
+      - internal-net
+      - redis-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 768M
+
+  snippet-asset-service:
+    image: ghcr.io/ingsismac/snippet-asset-service:${TAG:-latest}
+    environment:
+      AZURE_HOST: "http://azurite"
+      SERVER_PORT: 8083
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_ENV_SUFFIX:+asset-service-${NEW_RELIC_ENV_SUFFIX}}
+      NEW_RELIC_AGENT_ENABLED: ${NEW_RELIC_AGENT_ENABLED:-true}
+      NEW_RELIC_LOGS_IN_CONTEXT_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_ENABLED: "true"
+      NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED: "true"
+      NEW_RELIC_DISTRIBUTED_TRACING_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -Dnewrelic.config.file=/run/secrets/newrelic.yml"
+    secrets:
+      - source: newrelic_yml
+        target: newrelic.yml
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9090/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    networks:
+      - internal-net
+      - asset-storage-net
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 768M
+
+  snippet-ui:
+    image: ghcr.io/ingsismac/snippet-ui:${TAG:-latest}
+    networks:
+      - edge-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 64M
+
+secrets:
+  postgres_password:
+    external: true
+  auth0_m2m_client_id:
+    external: true
+  auth0_m2m_client_secret:
+    external: true
+  newrelic_yml:
+    external: true
+
+networks:
+  edge-net:
+    external: true
+  internal-net:
+    external: true
+  redis-net:
+    external: true
+  snippets-db-net:
+    external: true
+  permissions-db-net:
+    external: true
+  asset-storage-net:
+    external: true

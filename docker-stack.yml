@@ -12,7 +12,7 @@ services:
     volumes:
       - snippets_pgdata:/var/lib/postgresql/data
     networks:
-      - snippet-network
+      - snippets-db-net
     deploy:
       replicas: 1
       restart_policy:
@@ -32,7 +32,7 @@ services:
     volumes:
       - permissions_pgdata:/var/lib/postgresql/data
     networks:
-      - snippet-network
+      - permissions-db-net
     deploy:
       replicas: 1
       restart_policy:
@@ -48,7 +48,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - snippet-network
+      - redis-net
     deploy:
       replicas: 1
       restart_policy:
@@ -65,7 +65,7 @@ services:
     volumes:
       - azurite_data:/data
     networks:
-      - snippet-network
+      - asset-storage-net
     deploy:
       replicas: 1
       restart_policy:
@@ -110,7 +110,10 @@ services:
       retries: 3
       start_period: 180s
     networks:
-      - snippet-network
+      - edge-net
+      - internal-net
+      - redis-net
+      - snippets-db-net
     deploy:
       replicas: 2
       restart_policy:
@@ -147,7 +150,10 @@ services:
       retries: 3
       start_period: 180s
     networks:
-      - snippet-network
+      - edge-net
+      - internal-net
+      - redis-net
+      - permissions-db-net
     deploy:
       replicas: 2
       restart_policy:
@@ -184,7 +190,8 @@ services:
       retries: 3
       start_period: 180s
     networks:
-      - snippet-network
+      - internal-net
+      - redis-net
     deploy:
       # Dejo el runner en una sola replica: ExecutionSessionRegistry guarda las
       # sesiones de ejecucion en memoria de cada JVM, y con dos replicas el GET del
@@ -218,7 +225,8 @@ services:
       retries: 3
       start_period: 180s
     networks:
-      - snippet-network
+      - internal-net
+      - asset-storage-net
     deploy:
       replicas: 2
       restart_policy:
@@ -230,7 +238,7 @@ services:
   snippet-ui:
     image: ghcr.io/ingsismac/snippet-ui:${TAG:-latest}
     networks:
-      - snippet-network
+      - edge-net
     deploy:
       replicas: 1
       restart_policy:
@@ -250,7 +258,7 @@ services:
       - source: nginx_ssl_conf
         target: /etc/nginx/nginx.conf
     networks:
-      - snippet-network
+      - edge-net
     deploy:
       replicas: 1
       restart_policy:
@@ -271,7 +279,7 @@ services:
       - /sys:/host/sys:ro
       - /:/hostroot:ro
     networks:
-      - snippet-network
+      - internal-net
     deploy:
       mode: global
       restart_policy:
@@ -286,9 +294,24 @@ configs:
     file: ./nginx/nginx.ssl.conf
 
 networks:
-  snippet-network:
+  edge-net:
     driver: overlay
     attachable: true
+  internal-net:
+    driver: overlay
+    attachable: true
+  redis-net:
+    driver: overlay
+    internal: true
+  snippets-db-net:
+    driver: overlay
+    internal: true
+  permissions-db-net:
+    driver: overlay
+    internal: true
+  asset-storage-net:
+    driver: overlay
+    internal: true
 
 volumes:
   snippets_pgdata:
