@@ -104,10 +104,6 @@ secrets:
     external: true
 
 networks:
-  edge-net:
-    name: edge-net
-    driver: overlay
-    attachable: true
   internal-net:
     name: internal-net
     driver: overlay

@@ -31,4 +31,6 @@ configs:
 
 networks:
   edge-net:
-    external: true
+    name: edge-net
+    driver: overlay
+    attachable: true
